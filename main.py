@@ -1,11 +1,15 @@
 from math import radians, cos, sin, asin, sqrt
 import pandas as pd
-import multiprocessing
+import multiprocessing.dummy as multiprocessing
 import utm
 import os
 import sys
 import sqlite3
 from simpledbf import Dbf5
+
+
+# nodes_ref_stop = pd.DataFrame(columns=['stop_id', 'stop_lat', 'stop_lon', 'stop_id_ref',
+#                                        'stop_lat_ref', 'stop_lon_ref', 'stop_type_ref', 'distance'])
 
 
 def main():
@@ -52,9 +56,9 @@ def main():
     else:
         df = pd.read_csv(name, usecols=[0, 4, 5])
         nodes = df
+        nodes = nodes.head(500)
 
     nodes.to_csv('Nodes.csv', index=False)
-    nodes = nodes.head(500)
 
     dbf = Dbf5('Ref Layers/Cenefas/Cenefas/Cenefas.dbf')
     df = dbf.to_dataframe()
@@ -69,25 +73,21 @@ def main():
         df = df[df.stop_id_ref.str[0] == 'T']
         df['stop_type_ref'] = 'T'
         ref_stops = ref_stops.append(df)
-        ref_stops = ref_stops.head(500)
+        ref_stops = ref_stops.head(600)
 
-    nodes_ref_stop = pd.DataFrame(columns=['stop_id', 'stop_lat', 'stop_lon', 'stop_id_ref',
-                                           'stop_lat_ref', 'stop_lon_ref', 'stop_type_ref', 'distance'])
-
-    conn = sqlite3.connect("db.db")
-    cur = conn.cursor()
-    cur.execute('''CREATE TABLE IF NOT EXISTS NodesRefStop (stop_id text, stop_lat text, stop_lon text,
-                                            stop_id_ref text, stop_lat_ref text, stop_lon_ref text, stop_type_ref text, distance REAL )''')
     print len(nodes), len(ref_stops)
+
     def paramlist():
         for row in nodes.itertuples():
+            l = []
             for row2 in ref_stops.itertuples():
                 # if abs(row2[2] - row[2]) > 0.1 or abs(row[3] - row2[3]) > 0.1:
                 #     continue
-                yield (row[1], row[2], row[3], row2[1], row2[2], row2[3], row2[4], haversine(row[2], row[3], row2[2], row2[3]))
-
-    def func(params):
-        cur.execute("insert into NodesRefStop values (?, ?, ?, ?, ?, ?, ?, ?)", params)
+                # d = {'stop_id': row[1], 'stop_lat': row[2], 'stop_lon': row[3], 'stop_id_ref': row2[1],
+                #      'stop_lat_ref': row2[2], 'stop_lon_ref': row2[3], 'stop_type_ref': row2[4], 'distance': haversine(row[3], row[2], row2[3], row2[2])}
+                l.append((row[1], row[2], row[3], row2[1],
+                         row2[2], row2[3], row2[4], haversine(row[3], row[2], row2[3], row2[2])))
+            yield l
 
     # Generate processes equal to the number of cores
     pool = multiprocessing.Pool()
@@ -95,12 +95,7 @@ def main():
     # Distribute the parameter sets evenly across the cores
     pool.map(func, paramlist())
 
-    conn.commit()
-    cur.close()
-    conn.close()
-
-
-    nodes_ref_stop.to_csv('bigfile.csv')
+    con.close()
 
 
 def haversine(lon1, lat1, lon2, lat2):
@@ -120,5 +115,14 @@ def haversine(lon1, lat1, lon2, lat2):
     return c * r
 
 
+def func(params):
+    # nodes_ref_stop = pd.DataFrame(params)
+    cur.executemany('INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?)', params)
+    con.commit()
+
+
 if __name__ == '__main__':
+    con = sqlite3.connect('db.db', check_same_thread=False)
+    cur = con.cursor()
+    cur.execute("CREATE TABLE NodesRefStop (stop_id, stop_lat, stop_lon, stop_id_ref, stop_lat_ref, stop_lon_ref, stop_type_ref, distance)")
     main()
