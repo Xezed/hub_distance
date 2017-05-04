@@ -1,3 +1,4 @@
+from math import radians, cos, sin, asin, sqrt
 import pandas as pd
 import utm
 import os
@@ -58,7 +59,6 @@ def main():
     ref_stops = pd.read_csv('road_side.csv', header=0, names=['stop_id_ref', 'stop_lat_ref', 'stop_lon_ref'], index_col=False)
     ref_stops['stop_type_ref'] = 'Z'
     if not name:
-        print 'doing'
         ref_stops = ref_stops.append(df_troncal, ignore_index=True)
     else:
         df = pd.read_csv(name, usecols=[0, 4, 5], header=0, names=['stop_id_ref', 'stop_lat_ref', 'stop_lon_ref'], index_col=False)
@@ -67,7 +67,33 @@ def main():
         df['stop_type_ref'] = 'T'
         ref_stops = ref_stops.append(df)
 
-    ref_stops.to_csv('test.csv', index=False)
+    nodes_ref_stop = pd.DataFrame(columns=['stop_id', 'stop_lat', 'stop_lon', 'stop_id_ref',
+                                           'stop_lat_ref', 'stop_lon_ref', 'stop_type_ref', 'distance'])
+
+    for row in nodes.itertuples():
+        for row2 in ref_stops.itertuples():
+            l = [row[1], row[2], row[3], row2[1], row2[2], row2[3], row2[4], haversine(row[2], row[3], row2[2], row2[3])]
+            nodes_ref_stop = nodes_ref_stop.append(pd.Series(l, index=['stop_id', 'stop_lat', 'stop_lon', 'stop_id_ref',
+                                                                       'stop_lat_ref', 'stop_lon_ref', 'stop_type_ref', 'distance']), ignore_index=True)
+
+
+    nodes_ref_stop.to_csv('bigfile.csv')
+
+def haversine(lon1, lat1, lon2, lat2):
+    """
+    Calculate the great circle distance between two points
+    on the earth (specified in decimal degrees)
+    """
+    # convert decimal degrees to radians
+    lon1, lat1, lon2, lat2 = map(radians, [float(lon1), float(lat1), float(lon2), float(lat2)])
+
+    # haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a))
+    r = 6378137 # Radius of earth in meters. Use 3956 for miles
+    return c * r
 
 
 if __name__ == '__main__':

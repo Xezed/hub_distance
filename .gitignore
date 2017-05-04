@@ -3,7 +3,9 @@
 Nodes.csv
 *.zip
 .idea
-*.dbf#
+test.csv
+.~lock.Estaciones.dbf#
+road_side.csv
 
 .metadata
 bin/
