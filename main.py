@@ -1,15 +1,12 @@
 from math import radians, cos, sin, asin, sqrt
 import pandas as pd
-import multiprocessing.dummy as multiprocessing
+import multiprocessing
 import utm
+import gc
 import os
 import sys
-import sqlite3
+import csv
 from simpledbf import Dbf5
-
-
-# nodes_ref_stop = pd.DataFrame(columns=['stop_id', 'stop_lat', 'stop_lon', 'stop_id_ref',
-#                                        'stop_lat_ref', 'stop_lon_ref', 'stop_type_ref', 'distance'])
 
 
 def main():
@@ -56,7 +53,7 @@ def main():
     else:
         df = pd.read_csv(name, usecols=[0, 4, 5])
         nodes = df
-        nodes = nodes.head(500)
+        nodes = df.head(1000)
 
     nodes.to_csv('Nodes.csv', index=False)
 
@@ -73,9 +70,15 @@ def main():
         df = df[df.stop_id_ref.str[0] == 'T']
         df['stop_type_ref'] = 'T'
         ref_stops = ref_stops.append(df)
-        ref_stops = ref_stops.head(600)
+        ref_stops = ref_stops.head(1000)
 
     print len(nodes), len(ref_stops)
+
+    fields = ['stop_id', 'stop_lat', 'stop_lon', 'stop_id_ref', 'stop_lat_ref', 'stop_lon_ref', 'stop_type_ref',
+              'distance']
+    with open(r'big_file.csv', 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(fields)
 
     def paramlist():
         for row in nodes.itertuples():
@@ -95,7 +98,6 @@ def main():
     # Distribute the parameter sets evenly across the cores
     pool.map(func, paramlist())
 
-    con.close()
 
 
 def haversine(lon1, lat1, lon2, lat2):
@@ -116,13 +118,12 @@ def haversine(lon1, lat1, lon2, lat2):
 
 
 def func(params):
-    # nodes_ref_stop = pd.DataFrame(params)
-    cur.executemany('INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?)', params)
-    con.commit()
-
+    fields = ['stop_id', 'stop_lat', 'stop_lon', 'stop_id_ref', 'stop_lat_ref', 'stop_lon_ref', 'stop_type_ref', 'distance']
+    with open(r'big_file.csv', 'a') as f:
+        writer = csv.writer(f)
+        for row in params:
+            writer.writerow(row)
+    gc.collect()
 
 if __name__ == '__main__':
-    con = sqlite3.connect('db.db', check_same_thread=False)
-    cur = con.cursor()
-    cur.execute("CREATE TABLE NodesRefStop (stop_id, stop_lat, stop_lon, stop_id_ref, stop_lat_ref, stop_lon_ref, stop_type_ref, distance)")
     main()
