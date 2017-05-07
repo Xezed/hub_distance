@@ -6,7 +6,6 @@ import sqlite3
 from contextlib import closing
 import os
 import sys
-import csv
 from simpledbf import Dbf5
 
 
@@ -49,7 +48,7 @@ def main():
                     df = df.drop_duplicates(subset='stop_id')
                     df = df.apply(id_lon_lat, axis=1)
                     df = pd.DataFrame(df.tolist(), columns=['stop_id', 'stop_lat', 'stop_lon'], index=df.index)
-                    nodes.append(df)
+                    nodes = nodes.append(df)
 
     else:
         df = pd.read_csv(name, usecols=[0, 4, 5])
@@ -81,6 +80,9 @@ def main():
     cur = conn.cursor()
     cur.execute('''CREATE TABLE IF NOT EXISTS NodesRefStop (stop_id text, stop_lat text, stop_lon text,
                     stop_id_ref text, stop_lat_ref text, stop_lon_ref text, stop_type_ref text, distance REAL )''')
+    conn.commit()
+    cur.execute('PRAGMA synchronous = 0')
+    conn.commit()
 
 
     with closing(multiprocessing.Pool()) as pool:
@@ -90,8 +92,7 @@ def main():
 
         # open file and write out all rows from incoming lists of rows
         for row_list in joined_rows:
-            for row in row_list:
-                cur.execute("insert into NodesRefStop values (?, ?, ?, ?, ?, ?, ?, ?)", row)
+            cur.executemany("insert into NodesRefStop values (?, ?, ?, ?, ?, ?, ?, ?)", row_list)
             conn.commit()
 
 
