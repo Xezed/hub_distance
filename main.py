@@ -2,7 +2,7 @@ from math import radians, cos, sin, asin, sqrt
 import pandas as pd
 import multiprocessing
 import utm
-import gc
+from contextlib import closing
 import os
 import sys
 import csv
@@ -53,7 +53,6 @@ def main():
     else:
         df = pd.read_csv(name, usecols=[0, 4, 5])
         nodes = df
-        nodes = df.head(1000)
 
     nodes.to_csv('Nodes.csv', index=False)
 
@@ -69,35 +68,33 @@ def main():
         cols = ['stop_id_ref', 'stop_lat_ref', 'stop_lon_ref']
         df = df[df.stop_id_ref.str[0] == 'T']
         df['stop_type_ref'] = 'T'
+        global ref_stops
         ref_stops = ref_stops.append(df)
-        ref_stops = ref_stops.head(1000)
 
     print len(nodes), len(ref_stops)
 
     fields = ['stop_id', 'stop_lat', 'stop_lon', 'stop_id_ref', 'stop_lat_ref', 'stop_lon_ref', 'stop_type_ref',
               'distance']
-    with open(r'big_file.csv', 'w') as f:
-        writer = csv.writer(f)
-        writer.writerow(fields)
 
-    def paramlist():
-        for row in nodes.itertuples():
-            l = []
-            for row2 in ref_stops.itertuples():
-                # if abs(row2[2] - row[2]) > 0.1 or abs(row[3] - row2[3]) > 0.1:
-                #     continue
-                # d = {'stop_id': row[1], 'stop_lat': row[2], 'stop_lon': row[3], 'stop_id_ref': row2[1],
-                #      'stop_lat_ref': row2[2], 'stop_lon_ref': row2[3], 'stop_type_ref': row2[4], 'distance': haversine(row[3], row[2], row2[3], row2[2])}
-                l.append((row[1], row[2], row[3], row2[1],
-                         row2[2], row2[3], row2[4], haversine(row[3], row[2], row2[3], row2[2])))
-            yield l
+    with closing(multiprocessing.Pool()) as pool:
+        # joined_rows will contain lists of joined rows in arbitrary order.
+        # use name=None so we get proper tuples, pandas named tuples cannot be pickled, see https://github.com/pandas-dev/pandas/issues/11791
+        joined_rows = pool.imap_unordered(join_rows, nodes.itertuples(name=None))
 
-    # Generate processes equal to the number of cores
-    pool = multiprocessing.Pool()
+        # open file and write out all rows from incoming lists of rows
+        with open(r'big_file.csv', 'w') as f:
+            writer = csv.writer(f)
+            for row_list in joined_rows:
+                writer.writerows(row_list)
 
-    # Distribute the parameter sets evenly across the cores
-    pool.map(func, paramlist())
 
+def join_rows(row):
+    # for row in nodes.itertuples():
+    l = []
+    for row2 in ref_stops.itertuples():
+        l.append((row[1], row[2], row[3], row2[1],
+                  row2[2], row2[3], row2[4], haversine(row[3], row[2], row2[3], row2[2])))
+    return l
 
 
 def haversine(lon1, lat1, lon2, lat2):
@@ -116,14 +113,6 @@ def haversine(lon1, lat1, lon2, lat2):
     r = 6378137 # Radius of earth in meters. Use 3956 for miles
     return c * r
 
-
-def func(params):
-    fields = ['stop_id', 'stop_lat', 'stop_lon', 'stop_id_ref', 'stop_lat_ref', 'stop_lon_ref', 'stop_type_ref', 'distance']
-    with open(r'big_file.csv', 'a') as f:
-        writer = csv.writer(f)
-        for row in params:
-            writer.writerow(row)
-    gc.collect()
 
 if __name__ == '__main__':
     main()
