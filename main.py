@@ -2,6 +2,7 @@ from math import radians, cos, sin, asin, sqrt
 import pandas as pd
 import multiprocessing
 import utm
+import sqlite3
 from contextlib import closing
 import os
 import sys
@@ -76,16 +77,22 @@ def main():
     fields = ['stop_id', 'stop_lat', 'stop_lon', 'stop_id_ref', 'stop_lat_ref', 'stop_lon_ref', 'stop_type_ref',
               'distance']
 
+    conn = sqlite3.connect('db.db')
+    cur = conn.cursor()
+    cur.execute('''CREATE TABLE IF NOT EXISTS NodesRefStop (stop_id text, stop_lat text, stop_lon text,
+                    stop_id_ref text, stop_lat_ref text, stop_lon_ref text, stop_type_ref text, distance REAL )''')
+
+
     with closing(multiprocessing.Pool()) as pool:
         # joined_rows will contain lists of joined rows in arbitrary order.
         # use name=None so we get proper tuples, pandas named tuples cannot be pickled, see https://github.com/pandas-dev/pandas/issues/11791
         joined_rows = pool.imap_unordered(join_rows, nodes.itertuples(name=None))
 
         # open file and write out all rows from incoming lists of rows
-        with open(r'big_file.csv', 'w') as f:
-            writer = csv.writer(f)
-            for row_list in joined_rows:
-                writer.writerows(row_list)
+        for row_list in joined_rows:
+            for row in row_list:
+                cur.execute("insert into NodesRefStop values (?, ?, ?, ?, ?, ?, ?, ?)", row)
+            conn.commit()
 
 
 def join_rows(row):
