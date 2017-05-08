@@ -6,8 +6,11 @@ import sqlite3
 from contextlib import closing
 import os
 import sys
+import unicodecsv as csv
 from simpledbf import Dbf5
 
+reload(sys)  
+sys.setdefaultencoding('utf8')
 
 def main():
     try:
@@ -54,18 +57,17 @@ def main():
         df = pd.read_csv(name, usecols=[0, 4, 5])
         nodes = df
 
-    nodes.to_csv('Nodes.csv', index=False)
+    # nodes.to_csv('Nodes.csv', index=False)
 
     dbf = Dbf5('Ref Layers/Cenefas/Cenefas/Cenefas.dbf')
     df = dbf.to_dataframe()
-    df.to_csv('road_side.csv', columns=['CENEFA', 'Longitud', 'Latitud'], index=False)
-    ref_stops = pd.read_csv('road_side.csv', header=0, names=['stop_id_ref', 'stop_lat_ref', 'stop_lon_ref'], index_col=False)
+    df.to_csv('cenefas.csv', columns=['CENEFA', 'Latitud', 'Longitud'], index=False)
+    ref_stops = pd.read_csv('cenefas.csv', header=0, names=['stop_id_ref', 'stop_lat_ref', 'stop_lon_ref'], index_col=False)
     ref_stops['stop_type_ref'] = 'Z'
     if not name:
         ref_stops = ref_stops.append(df_troncal, ignore_index=True)
     else:
         df = pd.read_csv(name, usecols=[0, 4, 5], header=0, names=['stop_id_ref', 'stop_lat_ref', 'stop_lon_ref'], index_col=False)
-        cols = ['stop_id_ref', 'stop_lat_ref', 'stop_lon_ref']
         df = df[df.stop_id_ref.str[0] == 'T']
         df['stop_type_ref'] = 'T'
         global ref_stops
@@ -76,14 +78,12 @@ def main():
     fields = ['stop_id', 'stop_lat', 'stop_lon', 'stop_id_ref', 'stop_lat_ref', 'stop_lon_ref', 'stop_type_ref',
               'distance']
 
-    conn = sqlite3.connect('db.db')
-    cur = conn.cursor()
-    cur.execute('''CREATE TABLE IF NOT EXISTS NodesRefStop (stop_id text, stop_lat text, stop_lon text,
-                    stop_id_ref text, stop_lat_ref text, stop_lon_ref text, stop_type_ref text, distance REAL )''')
-    conn.commit()
-    cur.execute('PRAGMA synchronous = 0')
-    conn.commit()
-
+    with open('NodesRefStop.csv', 'w') as f:
+        with open('UnmatchedNodes.csv', 'w') as un:
+            writer = csv.writer(f)
+            writer.writerow(fields)
+            writer = csv.writer(un)
+            writer.writerow(fields)
 
     with closing(multiprocessing.Pool()) as pool:
         # joined_rows will contain lists of joined rows in arbitrary order.
@@ -91,9 +91,62 @@ def main():
         joined_rows = pool.imap_unordered(join_rows, nodes.itertuples(name=None))
 
         # open file and write out all rows from incoming lists of rows
-        for row_list in joined_rows:
-            cur.executemany("insert into NodesRefStop values (?, ?, ?, ?, ?, ?, ?, ?)", row_list)
-            conn.commit()
+        with open('NodesRefStop.csv', 'a') as f:
+            with open('UnmatchedNodes.csv', 'a') as un:
+                writer = csv.writer(f)
+                un_writer = csv.writer(un)
+                for row_list in joined_rows:
+                    min_dist = sys.maxint
+                    min_row = ''
+                    for row in row_list:
+                        if int(row[7]) < min_dist:
+                            min_dist = int(row[7])
+                            min_row = row
+                    if int(row[7]) > 20:
+                        un_writer.writerow(row)
+                    else:
+                        writer.writerow(row)
+
+    nodes = pd.read_csv('NodesRefStop.csv', usecols=[3, 4, 5], header=0,
+                     names=['stop_id_ref', 'stop_lat_ref', 'stop_lon_ref'])
+    nodes = df[df.stop_id_ref.str[0] == 'T']
+
+    dbf = Dbf5('Ref Layers/Estaciones/Estaciones/Estaciones.dbf')
+    dbf = dbf.to_dataframe()
+    dbf.to_csv('estaciones.csv', columns=['ID', 'latitude', 'longitude'], index=False)
+    global ref_stops
+    ref_stops = pd.read_csv('estaciones.csv', header=0, names=['stop_id_ref', 'stop_lat_ref', 'stop_lon_ref'],
+                            index_col=False)
+    ref_stops['stop_type_ref'] = 'T'
+
+    with closing(multiprocessing.Pool()) as pool:
+        # joined_rows will contain lists of joined rows in arbitrary order.
+        # use name=None so we get proper tuples, pandas named tuples cannot be pickled, see https://github.com/pandas-dev/pandas/issues/11791
+        joined_rows = pool.imap_unordered(join_rows, nodes.itertuples(name=None))
+
+        # open file and write out all rows from incoming lists of rows
+        with open('RefStopParent.csv', 'w') as f:
+            with open('RefStopOrphans.csv', 'w') as un:
+                writer = csv.writer(f)
+                un_writer = csv.writer(un)
+                for row_list in joined_rows:
+                    min_dist = sys.maxint
+                    min_row = ''
+                    for row in row_list:
+                        if int(row[7]) < min_dist:
+                            min_dist = int(row[7])
+                            min_row = row
+                    if int(row[7]) > 100:
+                        un_writer.writerow(row)
+                    else:
+                        writer.writerow(row)
+
+    with open('stops.txt', 'w') as f:
+        writer = csv.writer(f, encoding='utf-8', delimiter=',')
+        dbf.to_csv('estaciones.csv', columns=['NOMBRE', 'UBICACION', 'latitude', 'longitude'], encoding='utf-8')
+        estaciones = pd.read_csv('estaciones.csv', header=0, names=['stop_id', 'stop_name', 'stop_desc', 'stop_lat', 'stop_lon'])
+        for row in estaciones.itertuples(name=None):
+            writer.writerow([unicode(row[1]), row[2], row[3], unicode(row[4]), unicode(row[5]), '1', ' '])
 
 
 def join_rows(row):
@@ -118,7 +171,7 @@ def haversine(lon1, lat1, lon2, lat2):
     dlat = lat2 - lat1
     a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
     c = 2 * asin(sqrt(a))
-    r = 6378137 # Radius of earth in meters. Use 3956 for miles
+    r = 6371 # Radius of earth in meters. Use 3956 for miles
     return c * r
 
 
