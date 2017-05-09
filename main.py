@@ -56,7 +56,6 @@ def main():
     else:
         df = pd.read_csv(name, usecols=[0, 4, 5])
         nodes = df
-
     # nodes.to_csv('Nodes.csv', index=False)
 
     dbf = Dbf5('Ref Layers/Cenefas/Cenefas/Cenefas.dbf')
@@ -102,14 +101,15 @@ def main():
                         if int(row[7]) < min_dist:
                             min_dist = int(row[7])
                             min_row = row
-                    if int(row[7]) > 20:
-                        un_writer.writerow(row)
+                    if int(min_row[7]) > 20:
+                        un_writer.writerow(min_row)
                     else:
-                        writer.writerow(row)
+                        writer.writerow(min_row)
 
     nodes = pd.read_csv('NodesRefStop.csv', usecols=[3, 4, 5], header=0,
                      names=['stop_id_ref', 'stop_lat_ref', 'stop_lon_ref'])
-    nodes = df[df.stop_id_ref.str[0] == 'T']
+    nodes = nodes[nodes.stop_id_ref.str[0] == 'T']
+    print nodes
 
     dbf = Dbf5('Ref Layers/Estaciones/Estaciones/Estaciones.dbf')
     dbf = dbf.to_dataframe()
@@ -136,10 +136,10 @@ def main():
                         if int(row[7]) < min_dist:
                             min_dist = int(row[7])
                             min_row = row
-                    if int(row[7]) > 100:
-                        un_writer.writerow(row)
+                    if int(min_row[7]) > 100:
+                        un_writer.writerow(min_row)
                     else:
-                        writer.writerow(row)
+                        writer.writerow(min_row)
 
     with open('stops.txt', 'w') as f:
         writer = csv.writer(f, encoding='utf-8', delimiter=',')
@@ -152,7 +152,7 @@ def main():
 def join_rows(row):
     # for row in nodes.itertuples():
     l = []
-    for row2 in ref_stops.itertuples():
+    for row2 in ref_stops.itertuples(name=None):
         l.append((row[1], row[2], row[3], row2[1],
                   row2[2], row2[3], row2[4], haversine(row[3], row[2], row2[3], row2[2])))
     return l
@@ -171,7 +171,7 @@ def haversine(lon1, lat1, lon2, lat2):
     dlat = lat2 - lat1
     a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
     c = 2 * asin(sqrt(a))
-    r = 6371 # Radius of earth in meters. Use 3956 for miles
+    r = 6378137 # Radius of earth in meters. Use 3956 for miles
     return c * r
 
 
